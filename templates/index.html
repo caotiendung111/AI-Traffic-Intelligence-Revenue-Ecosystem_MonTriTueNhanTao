@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrafficAI v6.3 — The Masterpiece</title>
+    <link rel="stylesheet" href="/static/css/premium_styles.css">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+<body>
+
+<!-- ── Login Screen ──────────────────────── -->
+<div id="login-screen">
+    <div class="login-card">
+        <div class="brand" style="justify-content:center; margin-bottom:2rem">
+            <i data-lucide="shield-check"></i> <span>TRAFFIC AI</span>
+        </div>
+        <input type="text" id="login-user" class="input-field" placeholder="Username (admin)">
+        <input type="password" id="login-pass" class="input-field" placeholder="Password (123456)">
+        <button class="btn-main" onclick="doLogin()">INITIALIZE SYSTEM</button>
+    </div>
+</div>
+
+<!-- ── Sidebar ────────────────────────────── -->
+<div id="side">
+    <div class="brand"><i data-lucide="zap"></i> <span>TrafficAI</span></div>
+    
+    <div class="nav-group">
+        <div class="nav-label">Main Console</div>
+        <div class="nav-item active" onclick="switchTab('dashboard')"><i data-lucide="layout-dashboard"></i> Dashboard</div>
+        <div class="nav-item" onclick="switchTab('records')"><i data-lucide="database"></i> Records</div>
+    </div>
+
+    <div class="nav-group">
+        <div class="nav-label">Administrative</div>
+        <div class="nav-item" onclick="switchTab('audit')"><i data-lucide="clipboard-list"></i> Audit Log</div>
+        <div class="nav-item" onclick="switchTab('trash')"><i data-lucide="trash-2"></i> Trash Bin</div>
+        <div class="nav-item" onclick="switchTab('settings')"><i data-lucide="settings"></i> System Config</div>
+    </div>
+
+    <div style="margin-top:auto">
+        <div class="nav-item" onclick="location.reload()" style="color:var(--danger)"><i data-lucide="log-out"></i> Termination</div>
+    </div>
+</div>
+
+<!-- ── Main Area ──────────────────────────── -->
+<main>
+    <div class="topbar">
+        <div style="display:flex; align-items:center; background:rgba(255,255,255,0.03); border:1px solid var(--border-light); border-radius:12px; padding:0.5rem 1.25rem; width:400px">
+            <i data-lucide="search" size="18" style="color:var(--text-secondary)"></i>
+            <input type="text" id="global-search" placeholder="Search plates... (Ctrl+K)" oninput="handleSearch(this.value)" style="background:transparent; border:none; color:white; margin-left:1rem; outline:none; width:100%">
+        </div>
+        <div style="display:flex; align-items:center; gap:2rem">
+            <div id="clock" style="font-family:var(--font-mono); font-weight:700; color:var(--accent)">00:00:00</div>
+            <div style="width:40px; height:40px; background:var(--accent-glow); border:1px solid var(--accent); border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--accent)">
+                <i data-lucide="user"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="scroll-area">
+        <!-- Dashboard Section -->
+        <div id="tab-dashboard" class="section active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-title">Total Detections</div>
+                    <div id="st-total" class="stat-value">0</div>
+                </div>
+                <div class="stat-card" style="border-bottom:3px solid var(--success)">
+                    <div class="stat-title">Paid Packages</div>
+                    <div id="st-paid" class="stat-value">0</div>
+                </div>
+                <div class="stat-card" style="border-bottom:3px solid var(--accent)">
+                    <div class="stat-title">Calculated Revenue</div>
+                    <div id="st-rev" class="stat-value">0 VNĐ</div>
+                </div>
+                <div class="stat-card" style="border-bottom:3px solid var(--danger)">
+                    <div class="stat-title">Blacklisted</div>
+                    <div id="st-black" class="stat-value">0</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div style="padding:1.5rem; background:rgba(255,255,255,0.01); border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between">
+                    <h3 style="font-size:1.1rem">Live Stream Detections</h3>
+                    <div style="display:flex; align-items:center; gap:0.5rem; color:var(--success); font-size:0.8rem; font-weight:700">
+                        <span style="width:8px; height:8px; background:var(--success); border-radius:50%; animation:pulse 2s infinite"></span> REAL-TIME ACTIVE
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>Plate Identity</th><th>Class</th><th>Time</th><th>Status</th><th>Package</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="vehicle-rows"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Records Section -->
+        <div id="tab-records" class="section">
+            <div class="table-container">
+                <div style="padding:1.5rem"><h3>Historical Archive</h3></div>
+                <!-- Shared logic with dashboard -->
+            </div>
+        </div>
+
+        <!-- Audit Section -->
+        <div id="tab-audit" class="section">
+            <div class="table-container">
+                <div style="padding:1.5rem"><h3>System Audit Logs</h3></div>
+                <table>
+                    <thead><tr><th>Timestamp</th><th>Operator</th><th>Action</th><th>Details</th><th>IP Origin</th></tr></thead>
+                    <tbody id="audit-rows"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Trash Section -->
+        <div id="tab-trash" class="section">
+            <div class="table-container">
+                <div style="padding:1.5rem"><h3>Trash Recovery Bin</h3></div>
+                <table>
+                    <thead><tr><th>Plate Text</th><th>Deletion Date</th><th>Protocols</th></tr></thead>
+                    <tbody id="trash-rows"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div id="tab-settings" class="section">
+            <div class="stat-card" style="max-width:600px">
+                <h3 style="margin-bottom:2rem">Core Engine Settings</h3>
+                <div style="margin-bottom:1.5rem">
+                    <label class="nav-label" style="padding:0">System Identifier</label>
+                    <input id="cfg-system_name" type="text" class="input-field" style="margin:0">
+                </div>
+                <div style="margin-bottom:1.5rem">
+                    <label class="nav-label" style="padding:0">Price Per Unit (VNĐ)</label>
+                    <input id="cfg-price_per_vehicle" type="number" class="input-field" style="margin:0">
+                </div>
+                <div style="margin-bottom:2rem">
+                    <label class="nav-label" style="padding:0">Token Expiry (Hours)</label>
+                    <input id="cfg-token_expire_h" type="number" class="input-field" style="margin:0">
+                </div>
+                <button class="btn-main" onclick="saveConfig()">SYNCHRONIZE CONFIG</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div id="toast-container" style="position:fixed; bottom:2rem; right:2rem; z-index:9999; display:flex; flex-direction:column; gap:0.5rem"></div>
+
+<style>
+@keyframes pulse { 0% { opacity:1; } 50% { opacity:0.3; } 100% { opacity:1; } }
+.fade-in { animation: fadeIn 0.4s ease-out; }
+</style>
+
+<script src="/static/js/premium_logic.js"></script>
+</body>
+</html>
