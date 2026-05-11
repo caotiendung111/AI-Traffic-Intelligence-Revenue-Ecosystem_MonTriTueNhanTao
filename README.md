@@ -122,13 +122,21 @@ python web_app.py
 
 ## 👥 Nhóm phát triển
 
-| Thành viên | Vai trò |
+| Thành viên | Vai trò chi tiết |
 |------------|---------|
-| **Cao Tiến Dũng** | Trưởng nhóm · AI Pipeline · Backend |
+| **Cao Tiến Dũng** | **Full-stack AI Engineer**<br>• **Backend Architecture**: Thiết kế và triển khai hệ thống FastAPI, WebSocket, và kiến trúc cơ sở dữ liệu SQLite.<br>• **AI & Deep Learning Pipeline**: Huấn luyện và tối ưu hóa mô hình YOLOv8, tích hợp OpenVINO để tăng tốc suy luận trên CPU.<br>• **Frontend Engineering**: Phát triển giao diện người dùng theo phong cách Glassmorphism, xây dựng Dashboard thời gian thực và tích hợp PWA.<br>• **System Integration**: Kết nối các luồng dữ liệu từ camera, xử lý ảnh, đến hiển thị và quản lý doanh thu tự động. |
 
 📚 **Môn học:** Trí Tuệ Nhân Tạo  
-🏫 **Trường:** *(Điền tên trường của bạn)*  
-📅 **Năm học:** 2025 - 2026
+🏫 **Trường:** Trường Đại Học Bách Khoa Đà Nẵng  
+📅 **Năm học:** 2026 - 2027
+
+---
+
+## 📂 Dữ liệu & Mô hình (Dataset & Model)
+
+Dự án bao gồm bộ dữ liệu huấn luyện và mô hình đã tối ưu:
+- **Dataset:** Nằm trong thư mục `Colab_Backup/Find-license-plates-4/` (bao gồm tập train và test).
+- **Mô hình tốt nhất:** `Train_Final_PBL4/weights/best.pt` - Đã được huấn luyện hội tụ cho độ chính xác cao nhất trên biển số xe Việt Nam.
 
 ---
 

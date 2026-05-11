@@ -39,6 +39,12 @@ build/
 *.onnx
 *.bin
 *.weights
+!Train_Final_PBL4/weights/best.pt
+
+# ─────────────────────────────────────────────
+# Dataset (Mới thêm theo yêu cầu)
+# ─────────────────────────────────────────────
+!Colab_Backup/Find-license-plates-4/
 
 # ─────────────────────────────────────────────
 # Logs & Exports tạm thời
