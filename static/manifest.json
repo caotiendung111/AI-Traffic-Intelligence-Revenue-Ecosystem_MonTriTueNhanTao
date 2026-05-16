@@ -1,15 +1,9 @@
 {
-  "name": "TrafficAI Ultimate Monitoring",
+  "name": "TrafficAI Monitoring",
   "short_name": "TrafficAI",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#08090d",
-  "theme_color": "#22d3ee",
-  "icons": [
-    {
-      "src": "https://cdn-icons-png.flaticon.com/512/2555/2555013.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
+  "background_color": "#05070a",
+  "theme_color": "#2dd4bf",
+  "icons": []
 }

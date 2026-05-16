@@ -1,0 +1,5 @@
+ultralytics>=8.2.0
+easyocr>=1.7.1
+opencv-python>=4.9.0
+pandas>=2.2.0
+torch>=2.2.0

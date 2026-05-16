@@ -1,151 +1,138 @@
-# 🚦 Integrated AI Traffic Intelligence & Automated Revenue Management Ecosystem
-### *Môn Trí Tuệ Nhân Tạo — Hệ Thống Quản Lý Giao Thông Thông Minh*
+# TrafficAI - AI Car Monitoring
 
-<div align="center">
+He thong nhan dien bien so va quan ly luot xe cho do an AI_CAR/PBL4.
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![OpenVINO](https://img.shields.io/badge/OpenVINO-AI_Engine-0071C5?style=for-the-badge&logo=intel&logoColor=white)
-![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+## Tinh nang chinh
 
-> **Hệ sinh thái toàn diện** tích hợp Trí tuệ Nhân tạo để nhận diện biển số xe tự động, giám sát giao thông thời gian thực và quản lý doanh thu tự động dành cho các cơ quan quản lý giao thông.
+- Nhan dien xe va bien so tu video bang YOLOv8, OpenVINO va EasyOCR.
+- Ghi lich su nhan dien vao SQLite.
+- Dashboard FastAPI de xem thong ke, tim kiem, loc trang thai va quan ly thanh toan.
+- Soft-delete, Trash Bin va khoi phuc ban ghi.
+- Blacklist/Clear blacklist kem ly do va audit log.
+- Xem lich su tung bien so: cac lan nhan dien va cac lan doi trang thai.
+- Reports tab: thong ke theo ngay va thong ke loai xe.
+- Export CSV theo bo loc hien tai.
+- Audit log cho dang nhap, cap nhat goi, blacklist, xoa/khoi phuc va cau hinh.
+- TrafficShield: rate limit theo IP, login limit rieng, chan tam IP, gioi han body request va WebSocket.
+- PWA co cache noi bo cho giao dien chinh.
+- Tu migrate schema cu khi khoi dong, khong can xoa database cu.
 
-</div>
+## Cau truc quan trong
 
----
-
-## 📌 Tổng quan dự án
-
-Dự án xây dựng một **nền tảng quản lý giao thông thế hệ mới** hoàn chỉnh gồm hai lớp chính:
-
-1. **Lớp AI (Nhận diện):** Sử dụng YOLOv8 kết hợp OpenVINO để nhận diện phương tiện và đọc biển số xe Việt Nam với độ chính xác cao trong thời gian thực.
-2. **Lớp Web (Quản lý):** Dashboard doanh nghiệp (Enterprise) được xây dựng bằng FastAPI, cho phép quản lý phương tiện, thu phí, phân tích dữ liệu và kiểm soát bảo mật.
-
----
-
-## ✨ Tính năng nổi bật
-
-| Tính năng | Mô tả |
-|-----------|-------|
-| 🎯 **ANPR Thông minh** | Nhận diện biển số Việt Nam 1 dòng & 2 dòng bằng AI |
-| ⚡ **Xử lý thời gian thực** | Pipeline OpenVINO tối ưu cho CPU, không cần GPU |
-| 📊 **Dashboard Enterprise** | Giao diện Glassmorphism cao cấp, PWA-ready |
-| 💰 **Quản lý Doanh thu** | Tự động tính phí, theo dõi trạng thái thanh toán |
-| 🔒 **Bảo mật nhiều lớp** | JWT Authentication, RBAC, Audit Log đầy đủ |
-| 🚫 **Blacklist System** | Tự động cảnh báo phương tiện trong danh sách đen |
-| 📈 **Phân tích & Báo cáo** | Thống kê theo ngày, xuất CSV, lịch sử phát hiện |
-| 🔌 **WebSocket Live** | Cập nhật dữ liệu tức thì không cần refresh trang |
-
----
-
-## 🏗️ Kiến trúc hệ thống
-
-```
-AI-Traffic-Intelligence-Revenue-Ecosystem/
-│
-├── main.py                  # Pipeline AI chính (YOLO + OpenVINO + OCR)
-├── web_app.py               # FastAPI backend (API + WebSocket + Auth)
-├── database_manager.py      # Lớp quản lý cơ sở dữ liệu SQLite
-├── config.py                # Cấu hình hệ thống (Pydantic Settings)
-├── requirements.txt         # Danh sách thư viện
-│
-├── static/
-│   ├── css/                 # Giao diện Premium Glassmorphism
-│   ├── js/                  # Frontend logic
-│   ├── manifest.json        # PWA Manifest
-│   └── sw.js                # Service Worker
-│
-└── templates/
-    └── index.html           # Template Dashboard chính
+```text
+main.py                         Pipeline AI xu ly video
+database_manager.py             Lop ghi/lay du lieu SQLite cho pipeline
+web_app.py                      FastAPI backend va dashboard
+config.py                       Cau hinh he thong
+templates/index.html            Giao dien dashboard
+static/css/premium_styles.css   Style dashboard
+static/js/premium_logic.js      Logic frontend
+Train_Final_PBL4/weights/       Model bien so da train
+traffic_monitoring.db           Database SQLite
+requirements-ai.txt             Dependency rieng cho pipeline AI
 ```
 
----
+> Pham vi AI_CAR khong bao gom cac thu muc Fireguard/Freshman.
 
-## 🤖 Stack Công nghệ
+## Cai dat
 
-**Backend & AI:**
-- `FastAPI` — Web framework hiệu năng cao (ASGI)
-- `YOLOv8` (Ultralytics) — Phát hiện phương tiện
-- `OpenVINO` — Tối ưu hóa suy luận AI trên CPU Intel
-- `EasyOCR / Tesseract` — Đọc ký tự biển số
-- `SQLAlchemy` + `SQLite` — ORM & Cơ sở dữ liệu
-- `APScheduler` — Lập lịch tác vụ tự động
-- `JWT` + `passlib` — Xác thực & bảo mật
-
-**Frontend:**
-- Vanilla JS + CSS Glassmorphism
-- WebSocket (cập nhật realtime)
-- Progressive Web App (PWA)
-
----
-
-## 🚀 Hướng dẫn cài đặt
-
-### 1. Clone repository
-```bash
-git clone https://github.com/caotiendung111/AI-Traffic-Intelligence-Revenue-Ecosystem_MonTriTueNhanTao.git
-cd AI-Traffic-Intelligence-Revenue-Ecosystem_MonTriTueNhanTao
-```
-
-### 2. Cài đặt thư viện
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Tải model AI (thủ công)
-> Do giới hạn kích thước file GitHub, model cần tải riêng:
-- **YOLOv8n:** Tải tại [Ultralytics Releases](https://github.com/ultralytics/assets/releases) → đặt vào thư mục gốc với tên `yolov8n.pt`
-- **OpenVINO model (biển số):** Đặt vào thư mục `PBL4_Project/`
+Neu chay pipeline AI, cai them cac thu vien AI can thiet neu may chua co:
 
-### 4. Chạy hệ thống
+```bash
+pip install -r requirements-ai.txt
+```
 
-**Chạy Pipeline AI (nhận diện video):**
+## Chay dashboard
+
+```bash
+python web_app.py
+```
+
+Mo trinh duyet tai:
+
+```text
+http://localhost:8001
+```
+
+Tai khoan mac dinh:
+
+```text
+admin / 123456
+```
+
+## Chay pipeline nhan dien
+
 ```bash
 python main.py
 ```
 
-**Chạy Web Dashboard:**
+Mac dinh pipeline doc video `test_bot_cutted.mp4`, ghi ket qua vao `traffic_monitoring.db` va xuat file `output_traffic_monitoring.avi`.
+
+## Cau hinh
+
+Co the sua truc tiep trong `config.py` hoac dat bien moi truong:
+
+- `SECRET_KEY`
+- `TOKEN_EXPIRE_H`
+- `DATABASE_URL`
+- `PRICE_PER_VEHICLE`
+- `SYSTEM_NAME`
+- `ALLOWED_ORIGINS`
+- `RATE_LIMIT_ENABLED`
+- `RATE_LIMIT_REQUESTS`
+- `RATE_LIMIT_WINDOW_SECONDS`
+- `LOGIN_RATE_LIMIT_REQUESTS`
+- `LOGIN_RATE_LIMIT_WINDOW_SECONDS`
+- `RATE_LIMIT_BAN_SECONDS`
+- `MAX_REQUEST_BODY_BYTES`
+- `MAX_WS_PER_IP`
+- `MAX_WS_TOTAL`
+- `TRUST_PROXY_HEADERS`
+- `UVICORN_LIMIT_CONCURRENCY`
+- `UVICORN_TIMEOUT_KEEP_ALIVE`
+
+Dashboard cung co tab `System Config` de sua mot so cau hinh runtime.
+
+## API quan trong
+
+- `POST /api/login`
+- `GET /api/stats`
+- `GET /api/vehicles`
+- `GET /api/vehicle/{plate}/history`
+- `POST /api/vehicle/{plate}/upgrade`
+- `POST /api/vehicle/{plate}/cancel`
+- `POST /api/vehicle/{plate}/blacklist`
+- `POST /api/vehicle/{plate}/clear-blacklist`
+- `DELETE /api/vehicle/{plate}`
+- `POST /api/vehicle/{plate}/restore`
+- `GET /api/reports/overview`
+- `GET /api/export/vehicles`
+- `GET /api/system/status`
+- `GET /api/security/status`
+
+## TrafficShield
+
+Backend co lop bao ve muc ung dung de giam request rac:
+
+- Gioi han request theo IP cho toan bo API.
+- Gioi han rieng endpoint dang nhap de giam brute-force.
+- Tu dong chan tam IP khi vuot nguong.
+- Tu choi request co `Content-Length` qua lon.
+- Gioi han so ket noi WebSocket tren moi IP va tong he thong.
+- Gioi han concurrency va keep-alive khi chay bang `python web_app.py`.
+
+Luu y: lop nay giup on dinh ung dung khi bi spam nhe/vua. Neu public Internet va bi DDoS that su, nen dat them Nginx/Cloudflare/firewall truoc FastAPI.
+
+## Kiem tra nhanh
+
+Sau khi chay `python web_app.py`, co the kiem tra:
+
 ```bash
-python web_app.py
-# Truy cập: http://localhost:8001
-# Tài khoản mặc định: admin / 123456
+curl http://localhost:8001/api/health
 ```
 
----
-
-## 📸 Giao diện hệ thống
-
-> Dashboard Enterprise với giao diện Hyper-Precision Glass — Glassmorphism cao cấp, Dark Mode chuyên nghiệp.
-
----
-
-## 👥 Nhóm phát triển
-
-| Thành viên | Vai trò chi tiết |
-|------------|---------|
-| **Cao Tiến Dũng** | **Full-stack AI Engineer**<br>• **Backend Architecture**: Thiết kế và triển khai hệ thống FastAPI, WebSocket, và kiến trúc cơ sở dữ liệu SQLite.<br>• **AI & Deep Learning Pipeline**: Huấn luyện và tối ưu hóa mô hình YOLOv8, tích hợp OpenVINO để tăng tốc suy luận trên CPU.<br>• **Frontend Engineering**: Phát triển giao diện người dùng theo phong cách Glassmorphism, xây dựng Dashboard thời gian thực và tích hợp PWA.<br>• **System Integration**: Kết nối các luồng dữ liệu từ camera, xử lý ảnh, đến hiển thị và quản lý doanh thu tự động. |
-
-📚 **Môn học:** Trí Tuệ Nhân Tạo  
-🏫 **Trường:** Trường Đại Học Bách Khoa Đà Nẵng  
-📅 **Năm học:** 2026 - 2027
-
----
-
-## 📂 Dữ liệu & Mô hình (Dataset & Model)
-
-Dự án bao gồm bộ dữ liệu huấn luyện và mô hình đã tối ưu:
-- **Dataset:** Nằm trong thư mục `Colab_Backup/Find-license-plates-4/` (bao gồm tập train và test).
-- **Mô hình tốt nhất:** `Train_Final_PBL4/weights/best.pt` - Đã được huấn luyện hội tụ cho độ chính xác cao nhất trên biển số xe Việt Nam.
-
----
-
-## 📄 Giấy phép
-
-Dự án được phát hành theo giấy phép [MIT License](LICENSE).
-
----
-
-<div align="center">
-  <sub>Built with ❤️ using FastAPI + YOLOv8 + OpenVINO</sub>
-</div>
+Neu dung dashboard, dang nhap bang `admin / 123456`, mo tab `Reports`, `Records`, `Trash`, `System Config` de kiem tra cac tinh nang quan tri.

@@ -3,157 +3,180 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrafficAI v6.3 — The Masterpiece</title>
+    <title>TrafficAI v6.5</title>
     <link rel="stylesheet" href="/static/css/premium_styles.css">
+    <link rel="manifest" href="/static/manifest.json">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 <body>
-
-<!-- ── Login Screen ──────────────────────── -->
 <div id="login-screen">
-    <div class="login-card">
-        <div class="brand" style="justify-content:center; margin-bottom:2rem">
-            <i data-lucide="shield-check"></i> <span>TRAFFIC AI</span>
+    <form class="login-card" onsubmit="doLogin(event)">
+        <div class="brand login-brand">
+            <i data-lucide="shield-check"></i>
+            <span>TrafficAI</span>
         </div>
-        <input type="text" id="login-user" class="input-field" placeholder="Username (admin)">
-        <input type="password" id="login-pass" class="input-field" placeholder="Password (123456)">
-        <button class="btn-main" onclick="doLogin()">INITIALIZE SYSTEM</button>
-    </div>
+        <p class="login-subtitle">Dang nhap bang tai khoan quan tri de mo dashboard giam sat.</p>
+        <input type="text" id="login-user" class="input-field" placeholder="Username" value="admin" autocomplete="username">
+        <input type="password" id="login-pass" class="input-field" placeholder="Password" value="123456" autocomplete="current-password">
+        <button class="btn-main" type="submit">
+            <i data-lucide="log-in"></i>
+            Dang nhap
+        </button>
+    </form>
 </div>
 
-<!-- ── Sidebar ────────────────────────────── -->
-<div id="side">
-    <div class="brand"><i data-lucide="zap"></i> <span>TrafficAI</span></div>
-    
-    <div class="nav-group">
-        <div class="nav-label">Main Console</div>
-        <div class="nav-item active" onclick="switchTab('dashboard')"><i data-lucide="layout-dashboard"></i> Dashboard</div>
-        <div class="nav-item" onclick="switchTab('records')"><i data-lucide="database"></i> Records</div>
-    </div>
+<aside id="side">
+    <div class="brand"><i data-lucide="traffic-cone"></i> <span>TrafficAI</span></div>
 
     <div class="nav-group">
-        <div class="nav-label">Administrative</div>
-        <div class="nav-item" onclick="switchTab('audit')"><i data-lucide="clipboard-list"></i> Audit Log</div>
-        <div class="nav-item" onclick="switchTab('trash')"><i data-lucide="trash-2"></i> Trash Bin</div>
-        <div class="nav-item" onclick="switchTab('settings')"><i data-lucide="settings"></i> System Config</div>
+        <div class="nav-label">Giam sat</div>
+        <button class="nav-item active" type="button" onclick="switchTab('dashboard', this)"><i data-lucide="layout-dashboard"></i>Dashboard</button>
+        <button class="nav-item" type="button" onclick="switchTab('records', this)"><i data-lucide="database"></i>Records</button>
+        <button class="nav-item" type="button" onclick="switchTab('reports', this)"><i data-lucide="bar-chart-3"></i>Reports</button>
     </div>
 
-    <div style="margin-top:auto">
-        <div class="nav-item" onclick="location.reload()" style="color:var(--danger)"><i data-lucide="log-out"></i> Termination</div>
+    <div class="nav-group">
+        <div class="nav-label">Quan tri</div>
+        <button class="nav-item" type="button" onclick="switchTab('audit', this)"><i data-lucide="clipboard-list"></i>Audit Log</button>
+        <button class="nav-item" type="button" onclick="switchTab('trash', this)"><i data-lucide="trash-2"></i>Trash Bin</button>
+        <button class="nav-item" type="button" onclick="switchTab('settings', this)"><i data-lucide="settings"></i>System Config</button>
     </div>
-</div>
 
-<!-- ── Main Area ──────────────────────────── -->
+    <button class="nav-item danger-link" type="button" onclick="logout()"><i data-lucide="log-out"></i>Dang xuat</button>
+</aside>
+
 <main>
-    <div class="topbar">
-        <div style="display:flex; align-items:center; background:rgba(255,255,255,0.03); border:1px solid var(--border-light); border-radius:12px; padding:0.5rem 1.25rem; width:400px">
-            <i data-lucide="search" size="18" style="color:var(--text-secondary)"></i>
-            <input type="text" id="global-search" placeholder="Search plates... (Ctrl+K)" oninput="handleSearch(this.value)" style="background:transparent; border:none; color:white; margin-left:1rem; outline:none; width:100%">
+    <header class="topbar">
+        <div class="search-box">
+            <i data-lucide="search" size="18"></i>
+            <input type="text" id="global-search" placeholder="Tim bien so..." oninput="handleSearch(this.value)">
         </div>
-        <div style="display:flex; align-items:center; gap:2rem">
-            <div id="clock" style="font-family:var(--font-mono); font-weight:700; color:var(--accent)">00:00:00</div>
-            <div style="width:40px; height:40px; background:var(--accent-glow); border:1px solid var(--accent); border-radius:12px; display:flex; align-items:center; justify-content:center; color:var(--accent)">
-                <i data-lucide="user"></i>
-            </div>
+        <div class="topbar-right">
+            <select id="status-filter" class="select-field" onchange="handleStatus(this.value)">
+                <option value="">Tat ca trang thai</option>
+                <option value="UNPAID">UNPAID</option>
+                <option value="PAID">PAID</option>
+                <option value="BLACKLISTED">BLACKLISTED</option>
+            </select>
+            <div id="clock" class="clock">00:00:00</div>
+            <div class="avatar"><i data-lucide="user"></i></div>
         </div>
-    </div>
+    </header>
 
     <div class="scroll-area">
-        <!-- Dashboard Section -->
-        <div id="tab-dashboard" class="section active">
+        <section id="tab-dashboard" class="section active">
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-title">Total Detections</div>
-                    <div id="st-total" class="stat-value">0</div>
-                </div>
-                <div class="stat-card" style="border-bottom:3px solid var(--success)">
-                    <div class="stat-title">Paid Packages</div>
-                    <div id="st-paid" class="stat-value">0</div>
-                </div>
-                <div class="stat-card" style="border-bottom:3px solid var(--accent)">
-                    <div class="stat-title">Calculated Revenue</div>
-                    <div id="st-rev" class="stat-value">0 VNĐ</div>
-                </div>
-                <div class="stat-card" style="border-bottom:3px solid var(--danger)">
-                    <div class="stat-title">Blacklisted</div>
-                    <div id="st-black" class="stat-value">0</div>
-                </div>
+                <div class="stat-card"><div class="stat-title">Tong luot nhan dien</div><div id="st-total" class="stat-value">0</div></div>
+                <div class="stat-card success-card"><div class="stat-title">Da thanh toan</div><div id="st-paid" class="stat-value">0</div></div>
+                <div class="stat-card warning-card"><div class="stat-title">Chua thanh toan</div><div id="st-unpaid" class="stat-value">0</div></div>
+                <div class="stat-card accent-card"><div class="stat-title">Doanh thu uoc tinh</div><div id="st-rev" class="stat-value">0 VND</div></div>
+                <div class="stat-card danger-card"><div class="stat-title">Danh sach den</div><div id="st-black" class="stat-value">0</div></div>
             </div>
 
             <div class="table-container">
-                <div style="padding:1.5rem; background:rgba(255,255,255,0.01); border-bottom:1px solid var(--border-light); display:flex; justify-content:space-between">
-                    <h3 style="font-size:1.1rem">Live Stream Detections</h3>
-                    <div style="display:flex; align-items:center; gap:0.5rem; color:var(--success); font-size:0.8rem; font-weight:700">
-                        <span style="width:8px; height:8px; background:var(--success); border-radius:50%; animation:pulse 2s infinite"></span> REAL-TIME ACTIVE
-                    </div>
+                <div class="table-header">
+                    <h3>Live Stream Detections</h3>
+                    <span class="live-pill"><span></span>REAL-TIME ACTIVE</span>
                 </div>
                 <table>
                     <thead>
-                        <tr><th>Plate Identity</th><th>Class</th><th>Time</th><th>Status</th><th>Package</th><th>Actions</th></tr>
+                        <tr><th>Bien so</th><th>Loai xe</th><th>Thoi gian</th><th>Trang thai</th><th>Goi</th><th>Thao tac</th></tr>
                     </thead>
                     <tbody id="vehicle-rows"></tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <!-- Records Section -->
-        <div id="tab-records" class="section">
+        <section id="tab-records" class="section">
             <div class="table-container">
-                <div style="padding:1.5rem"><h3>Historical Archive</h3></div>
-                <!-- Shared logic with dashboard -->
-            </div>
-        </div>
-
-        <!-- Audit Section -->
-        <div id="tab-audit" class="section">
-            <div class="table-container">
-                <div style="padding:1.5rem"><h3>System Audit Logs</h3></div>
+                <div class="table-header">
+                    <h3>Historical Archive</h3>
+                    <div class="header-actions">
+                        <span id="record-count" class="muted"></span>
+                        <button class="btn-secondary" type="button" onclick="exportVehicles()"><i data-lucide="download"></i>Export CSV</button>
+                    </div>
+                </div>
                 <table>
-                    <thead><tr><th>Timestamp</th><th>Operator</th><th>Action</th><th>Details</th><th>IP Origin</th></tr></thead>
+                    <thead>
+                        <tr><th>Bien so</th><th>Loai xe</th><th>Thoi gian</th><th>Trang thai</th><th>Goi</th><th>Do tin cay</th><th>Thao tac</th></tr>
+                    </thead>
+                    <tbody id="record-rows"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="tab-reports" class="section">
+            <div class="report-grid">
+                <div class="table-container">
+                    <div class="table-header">
+                        <h3>Daily Overview</h3>
+                        <select id="report-days" class="select-field compact" onchange="loadReports()">
+                            <option value="7">7 ngay</option>
+                            <option value="14" selected>14 ngay</option>
+                            <option value="30">30 ngay</option>
+                        </select>
+                    </div>
+                    <table>
+                        <thead><tr><th>Ngay</th><th>Tong</th><th>Paid</th><th>Unpaid</th><th>Blacklist</th><th>Doanh thu</th></tr></thead>
+                        <tbody id="report-rows"></tbody>
+                    </table>
+                </div>
+                <div class="table-container">
+                    <div class="table-header"><h3>Vehicle Types</h3></div>
+                    <table>
+                        <thead><tr><th>Loai xe</th><th>So luong</th></tr></thead>
+                        <tbody id="type-rows"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-audit" class="section">
+            <div class="table-container">
+                <div class="table-header"><h3>System Audit Logs</h3></div>
+                <table>
+                    <thead><tr><th>Thoi gian</th><th>Nguoi dung</th><th>Hanh dong</th><th>Chi tiet</th><th>IP</th></tr></thead>
                     <tbody id="audit-rows"></tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <!-- Trash Section -->
-        <div id="tab-trash" class="section">
+        <section id="tab-trash" class="section">
             <div class="table-container">
-                <div style="padding:1.5rem"><h3>Trash Recovery Bin</h3></div>
+                <div class="table-header"><h3>Trash Recovery Bin</h3></div>
                 <table>
-                    <thead><tr><th>Plate Text</th><th>Deletion Date</th><th>Protocols</th></tr></thead>
+                    <thead><tr><th>Bien so</th><th>Loai xe</th><th>Ngay xoa</th><th>Trang thai</th><th>Thao tac</th></tr></thead>
                     <tbody id="trash-rows"></tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <!-- Settings Section -->
-        <div id="tab-settings" class="section">
-            <div class="stat-card" style="max-width:600px">
-                <h3 style="margin-bottom:2rem">Core Engine Settings</h3>
-                <div style="margin-bottom:1.5rem">
-                    <label class="nav-label" style="padding:0">System Identifier</label>
-                    <input id="cfg-system_name" type="text" class="input-field" style="margin:0">
-                </div>
-                <div style="margin-bottom:1.5rem">
-                    <label class="nav-label" style="padding:0">Price Per Unit (VNĐ)</label>
-                    <input id="cfg-price_per_vehicle" type="number" class="input-field" style="margin:0">
-                </div>
-                <div style="margin-bottom:2rem">
-                    <label class="nav-label" style="padding:0">Token Expiry (Hours)</label>
-                    <input id="cfg-token_expire_h" type="number" class="input-field" style="margin:0">
-                </div>
-                <button class="btn-main" onclick="saveConfig()">SYNCHRONIZE CONFIG</button>
+        <section id="tab-settings" class="section">
+            <div class="settings-panel">
+                <h3>Core Engine Settings</h3>
+                <label>System Identifier</label>
+                <input id="cfg-system_name" type="text" class="input-field">
+                <label>Price Per Unit (VND)</label>
+                <input id="cfg-price_per_vehicle" type="number" min="0" class="input-field">
+                <label>Token Expiry (Hours)</label>
+                <input id="cfg-token_expire_h" type="number" min="1" class="input-field">
+                <button class="btn-main" onclick="saveConfig()"><i data-lucide="save"></i>Luu cau hinh</button>
             </div>
-        </div>
+        </section>
     </div>
 </main>
 
-<div id="toast-container" style="position:fixed; bottom:2rem; right:2rem; z-index:9999; display:flex; flex-direction:column; gap:0.5rem"></div>
+<div id="modal" class="modal-backdrop" hidden>
+    <div class="modal-panel">
+        <div class="modal-header">
+            <h3 id="modal-title">Vehicle Detail</h3>
+            <button class="btn-action" type="button" onclick="closeModal()" title="Close"><i data-lucide="x"></i></button>
+        </div>
+        <div id="modal-body" class="modal-body"></div>
+    </div>
+</div>
 
-<style>
-@keyframes pulse { 0% { opacity:1; } 50% { opacity:0.3; } 100% { opacity:1; } }
-.fade-in { animation: fadeIn 0.4s ease-out; }
-</style>
+<div id="toast-container"></div>
 
 <script src="/static/js/premium_logic.js"></script>
 </body>

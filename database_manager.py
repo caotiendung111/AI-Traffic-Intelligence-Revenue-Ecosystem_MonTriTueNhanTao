@@ -1,5 +1,5 @@
-import sqlite3
 import datetime
+import sqlite3
 
 class DatabaseManager:
     def __init__(self, db_path='traffic_monitoring.db'):
@@ -20,16 +20,25 @@ class DatabaseManager:
                 direction TEXT,
                 confidence REAL,
                 payment_status TEXT DEFAULT 'UNPAID',
-                package_type TEXT DEFAULT 'NONE'
+                package_type TEXT DEFAULT 'STANDARD',
+                blacklist_reason TEXT,
+                lane TEXT,
+                deleted_at DATETIME
             )
         ''')
-        # Migration: Add columns if they don't exist
-        try:
-            cursor.execute("ALTER TABLE detections ADD COLUMN payment_status TEXT DEFAULT 'UNPAID'")
-        except: pass
-        try:
-            cursor.execute("ALTER TABLE detections ADD COLUMN package_type TEXT DEFAULT 'NONE'")
-        except: pass
+        migrations = [
+            "ALTER TABLE detections ADD COLUMN payment_status TEXT DEFAULT 'UNPAID'",
+            "ALTER TABLE detections ADD COLUMN package_type TEXT DEFAULT 'STANDARD'",
+            "ALTER TABLE detections ADD COLUMN blacklist_reason TEXT",
+            "ALTER TABLE detections ADD COLUMN lane TEXT",
+            "ALTER TABLE detections ADD COLUMN deleted_at DATETIME",
+        ]
+        for sql in migrations:
+            try:
+                cursor.execute(sql)
+            except sqlite3.OperationalError:
+                pass
+        cursor.execute("UPDATE detections SET package_type = 'STANDARD' WHERE package_type IS NULL OR package_type = '' OR package_type = 'NONE'")
         
         conn.commit()
         conn.close()
@@ -44,7 +53,7 @@ class DatabaseManager:
             existing = cursor.fetchone()
             
             p_status = existing[0] if existing else 'UNPAID'
-            p_type = existing[1] if existing else 'NONE'
+            p_type = existing[1] if existing else 'STANDARD'
 
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute('''
@@ -69,10 +78,10 @@ class DatabaseManager:
     def toggle_blacklist(self, plate_text):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT payment_status FROM detections WHERE plate_text = ? LIMIT 1", (plate_text,))
+        cursor.execute("SELECT payment_status FROM detections WHERE plate_text = ? AND deleted_at IS NULL LIMIT 1", (plate_text,))
         current = cursor.fetchone()
         new_status = "BLACKLISTED" if current and current[0] != "BLACKLISTED" else "UNPAID"
-        cursor.execute("UPDATE detections SET payment_status = ? WHERE plate_text = ?", (new_status, plate_text))
+        cursor.execute("UPDATE detections SET payment_status = ? WHERE plate_text = ? AND deleted_at IS NULL", (new_status, plate_text))
         conn.commit()
         conn.close()
         return new_status
@@ -81,7 +90,7 @@ class DatabaseManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('SELECT id FROM detections WHERE plate_text = ?', (plate_text,))
+            cursor.execute('SELECT id FROM detections WHERE plate_text = ? AND deleted_at IS NULL', (plate_text,))
             result = cursor.fetchone()
             conn.close()
             return result is not None
@@ -93,8 +102,11 @@ class DatabaseManager:
         cursor = conn.cursor()
         # Get unique plates with their latest status
         cursor.execute('''
-            SELECT plate_text, vehicle_type, MAX(timestamp), payment_status, package_type 
-            FROM detections GROUP BY plate_text ORDER BY timestamp DESC
+            SELECT plate_text, vehicle_type, MAX(timestamp), payment_status, package_type
+            FROM detections
+            WHERE deleted_at IS NULL
+            GROUP BY plate_text
+            ORDER BY timestamp DESC
         ''')
         rows = cursor.fetchall()
         conn.close()
@@ -104,7 +116,13 @@ class DatabaseManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('SELECT plate_text, vehicle_type, speed_kmh, timestamp FROM detections ORDER BY id DESC LIMIT ?', (limit,))
+            cursor.execute('''
+                SELECT plate_text, vehicle_type, speed_kmh, timestamp
+                FROM detections
+                WHERE deleted_at IS NULL
+                ORDER BY id DESC
+                LIMIT ?
+            ''', (limit,))
             rows = cursor.fetchall()
             conn.close()
             return rows
@@ -115,7 +133,7 @@ class DatabaseManager:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('SELECT COUNT(DISTINCT plate_text) FROM detections')
+            cursor.execute('SELECT COUNT(DISTINCT plate_text) FROM detections WHERE deleted_at IS NULL')
             count = cursor.fetchone()[0]
             conn.close()
             return count

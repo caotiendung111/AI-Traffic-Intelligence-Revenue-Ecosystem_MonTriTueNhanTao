@@ -75,3 +75,8 @@ recovered_scripts/
 .idea/
 *.DS_Store
 Thumbs.db
+
+# ─────────────────────────────────────────────
+# External Projects (Cleanup)
+# ─────────────────────────────────────────────
+.codex_pydeps/
