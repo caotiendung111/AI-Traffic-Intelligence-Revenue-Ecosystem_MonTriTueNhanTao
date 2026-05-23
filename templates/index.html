@@ -4,9 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TrafficAI v6.5</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/premium_styles.css">
     <link rel="manifest" href="/static/manifest.json">
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="/static/js/lucide.js" defer></script>
+    <script src="/static/js/apexcharts.js" defer></script>
 </head>
 <body>
 <div id="login-screen">
@@ -73,6 +77,70 @@
                 <div class="stat-card danger-card"><div class="stat-title">Danh sach den</div><div id="st-black" class="stat-value">0</div></div>
             </div>
 
+            <div class="dashboard-grid">
+                <div class="live-monitor-frame">
+                    <div class="monitor-header">
+                        <span class="monitor-title"><i data-lucide="video"></i> Camera Giám Sát BOT</span>
+                        <span id="monitor-badge" class="monitor-badge offline">OFFLINE</span>
+                    </div>
+                    <div class="monitor-screen">
+                        <img id="live-feed" src="" alt="Live Stream Feed" style="display: none;">
+                        <div id="monitor-placeholder" class="monitor-placeholder">
+                            <i data-lucide="video-off" class="placeholder-icon"></i>
+                            <h3>Hệ thống đang Ngoại tuyến</h3>
+                            <p>Chọn nguồn video ở bảng điều khiển và nhấn "Bắt đầu giám sát" để kết nối.</p>
+                        </div>
+                    </div>
+                    <div class="monitor-footer">
+                        <span id="monitor-fps"><i data-lucide="cpu"></i> FPS: 0</span>
+                        <span id="monitor-count"><i data-lucide="car"></i> Đã xử lý: 0</span>
+                    </div>
+                </div>
+
+                <div class="control-card">
+                    <div class="card-header">
+                        <h3><i data-lucide="sliders"></i> Bảng Điều Khiển AI</h3>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="video-source">Nguồn Video</label>
+                        <select id="video-source" class="select-field" onchange="toggleSourceInput()">
+                            <option value="test_bot_cutted.mp4">Video BOT Mẫu (Mặc định)</option>
+                            <option value="0">Camera máy tính (Cổng 0)</option>
+                            <option value="1">Camera điện thoại / Cam phụ (Cổng 1)</option>
+                            <option value="custom">-- Luồng RTSP / Custom URL --</option>
+                        </select>
+                    </div>
+
+                    <div id="custom-url-group" class="control-group" style="display: none;">
+                        <label for="custom-url">Đường dẫn Live Stream / RTSP</label>
+                        <input type="text" id="custom-url" class="input-field" placeholder="rtsp://... hoặc http://...">
+                    </div>
+
+                    <div class="control-group">
+                        <label>Tải lên Video Mới</label>
+                        <div id="dropzone" class="dropzone-area" onclick="triggerFileInput()">
+                            <i data-lucide="upload-cloud" class="upload-icon"></i>
+                            <p>Kéo thả video vào đây hoặc click để chọn file (.mp4)</p>
+                            <input type="file" id="file-input" accept="video/mp4" style="display: none;" onchange="handleFileUpload(event)">
+                            <div id="upload-progress" class="upload-progress" style="display: none;">
+                                <div class="progress-bar"><div id="progress-fill" style="height: 100%; background: var(--accent); width: 0%; transition: width 0.1s ease;"></div></div>
+                                <span id="progress-text">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button id="btn-start" class="btn-main btn-start" onclick="startAI()">
+                            <i data-lucide="play"></i> Bắt đầu
+                        </button>
+                        <button id="btn-stop" class="btn-main btn-stop" onclick="stopAI()" disabled>
+                            <i data-lucide="square"></i> Tạm dừng
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div class="table-container">
                 <div class="table-header">
                     <h3>Live Stream Detections</h3>
@@ -80,7 +148,7 @@
                 </div>
                 <table>
                     <thead>
-                        <tr><th>Bien so</th><th>Loai xe</th><th>Thoi gian</th><th>Trang thai</th><th>Goi</th><th>Thao tac</th></tr>
+                        <tr><th>Ảnh</th><th>Bien so</th><th>Loai xe</th><th>Thoi gian</th><th>Trang thai</th><th>Goi</th><th>Thao tac</th></tr>
                     </thead>
                     <tbody id="vehicle-rows"></tbody>
                 </table>
@@ -98,7 +166,7 @@
                 </div>
                 <table>
                     <thead>
-                        <tr><th>Bien so</th><th>Loai xe</th><th>Thoi gian</th><th>Trang thai</th><th>Goi</th><th>Do tin cay</th><th>Thao tac</th></tr>
+                        <tr><th>Ảnh</th><th>Bien so</th><th>Loai xe</th><th>Thoi gian</th><th>Trang thai</th><th>Goi</th><th>Do tin cay</th><th>Thao tac</th></tr>
                     </thead>
                     <tbody id="record-rows"></tbody>
                 </table>
@@ -106,15 +174,34 @@
         </section>
 
         <section id="tab-reports" class="section">
-            <div class="report-grid">
+            <div class="reports-header-bar">
+                <h3><i data-lucide="pie-chart"></i> Phân Tích & Báo Cáo BOT</h3>
+                <select id="report-days" class="select-field compact" onchange="loadReports()">
+                    <option value="7">7 ngày qua</option>
+                    <option value="14" selected>14 ngày qua</option>
+                    <option value="30">30 ngày qua</option>
+                </select>
+            </div>
+            
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h4><i data-lucide="trending-up"></i> Lưu Lượng Xe & Doanh Thu Trạm BOT</h4>
+                    </div>
+                    <div id="chart-traffic"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h4><i data-lucide="pie-chart"></i> Cơ Cấu Phương Tiện Đi Qua Trạm</h4>
+                    </div>
+                    <div id="chart-types"></div>
+                </div>
+            </div>
+
+            <div class="report-grid" style="margin-top: 2rem;">
                 <div class="table-container">
                     <div class="table-header">
-                        <h3>Daily Overview</h3>
-                        <select id="report-days" class="select-field compact" onchange="loadReports()">
-                            <option value="7">7 ngay</option>
-                            <option value="14" selected>14 ngay</option>
-                            <option value="30">30 ngay</option>
-                        </select>
+                        <h3>Daily Overview Table</h3>
                     </div>
                     <table>
                         <thead><tr><th>Ngay</th><th>Tong</th><th>Paid</th><th>Unpaid</th><th>Blacklist</th><th>Doanh thu</th></tr></thead>
@@ -122,7 +209,7 @@
                     </table>
                 </div>
                 <div class="table-container">
-                    <div class="table-header"><h3>Vehicle Types</h3></div>
+                    <div class="table-header"><h3>Vehicle Types Table</h3></div>
                     <table>
                         <thead><tr><th>Loai xe</th><th>So luong</th></tr></thead>
                         <tbody id="type-rows"></tbody>
@@ -145,7 +232,7 @@
             <div class="table-container">
                 <div class="table-header"><h3>Trash Recovery Bin</h3></div>
                 <table>
-                    <thead><tr><th>Bien so</th><th>Loai xe</th><th>Ngay xoa</th><th>Trang thai</th><th>Thao tac</th></tr></thead>
+                    <thead><tr><th>Ảnh</th><th>Bien so</th><th>Loai xe</th><th>Ngay xoa</th><th>Trang thai</th><th>Thao tac</th></tr></thead>
                     <tbody id="trash-rows"></tbody>
                 </table>
             </div>
@@ -178,6 +265,6 @@
 
 <div id="toast-container"></div>
 
-<script src="/static/js/premium_logic.js"></script>
+<script src="/static/js/premium_logic.js" defer></script>
 </body>
 </html>

@@ -14,8 +14,9 @@ from threading import Lock
 from typing import Any, List
 
 import jwt
+import threading
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -33,6 +34,296 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 VALID_STATUSES = {"UNPAID", "PAID", "BLACKLISTED"}
 CONFIG_KEYS = {"system_name", "price_per_vehicle", "token_expire_h"}
+
+
+# --- REALTIME AI ENGINE STATE & THREAD ---
+ai_engine_running = False
+ai_engine_thread = None
+latest_frame_lock = threading.Lock()
+latest_processed_frame = None
+
+_reader_lock = threading.Lock()
+_easyocr_reader = None
+
+_models_lock = threading.Lock()
+_plate_model = None
+_vehicle_model = None
+_optimal_devices = None
+
+def get_easyocr_reader():
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        import easyocr
+        with _reader_lock:
+            if _easyocr_reader is None:
+                _easyocr_reader = easyocr.Reader(['vi', 'en'], gpu=False)
+    return _easyocr_reader
+
+def get_ai_models():
+    global _plate_model, _vehicle_model, _optimal_devices
+    if _plate_model is None or _vehicle_model is None:
+        with _models_lock:
+            if _plate_model is None or _vehicle_model is None:
+                from ultralytics import YOLO
+                import openvino
+                
+                PLATE_MODEL_PATH = 'Train_Final_PBL4/weights/best_openvino_model'
+                has_ov_vehicle = False
+                if os.path.exists('yolov8n_openvino_model'):
+                    VEHICLE_MODEL_PATH = 'yolov8n_openvino_model'
+                    has_ov_vehicle = True
+                else:
+                    VEHICLE_MODEL_PATH = 'yolov8n.pt'
+                    
+                target_device_plate = 'cpu'
+                target_device_vehicle = 'cpu'
+                try:
+                    core = openvino.Core()
+                    if "GPU" in core.available_devices:
+                        target_device_plate = "intel:gpu"
+                        if has_ov_vehicle:
+                            target_device_vehicle = "intel:gpu"
+                except Exception:
+                    pass
+                
+                print(f"[AI ENGINE] Loading models - Plate: {target_device_plate}, Vehicle: {target_device_vehicle}")
+                _plate_model = YOLO(PLATE_MODEL_PATH, task='detect')
+                _vehicle_model = YOLO(VEHICLE_MODEL_PATH, task='detect')
+                _optimal_devices = {
+                    "plate": target_device_plate,
+                    "vehicle": target_device_vehicle
+                }
+    return _plate_model, _vehicle_model, _optimal_devices
+
+class TrafficAIEngine(threading.Thread):
+    def __init__(self, source_path: str):
+        super().__init__(daemon=True)
+        self.source_path = source_path
+        self.stop_event = threading.Event()
+        self.fps = 0
+        self.processed_frames = 0
+        self.status = "Initializing"
+
+    def run(self):
+        try:
+            from ultralytics import YOLO
+            import time
+            import datetime
+            from difflib import SequenceMatcher
+            import cv2
+            
+            self.status = "Loading AI models..."
+            plate_model, vehicle_model, devices = get_ai_models()
+            target_device_plate = devices["plate"]
+            target_device_vehicle = devices["vehicle"]
+            reader = get_easyocr_reader()
+            
+            self.status = "Opening source..."
+            cap = cv2.VideoCapture(self.source_path)
+            if not cap.isOpened():
+                self.status = f"Failed to open source"
+                return
+                
+            self.status = "Active"
+            tracked_objects = {}
+            last_seen_cleanup = time.time()
+            
+            knowledge_base = set()
+            if os.path.exists('ground_truth.csv'):
+                try:
+                    with open('ground_truth.csv', 'r', encoding='utf-8') as f:
+                         for line in f:
+                             plate = line.strip().upper().replace(".", "").replace("-", "")
+                             if plate: knowledge_base.add(plate)
+                except Exception as e:
+                    print(f"Error loading GT: {e}")
+                    
+            def get_best_match(text):
+                if not text: return None, 0
+                clean_text = text.upper().replace(" ", "").replace(".", "").replace("-", "")
+                if len(clean_text) < 5: return None, 0
+                best_match = None
+                best_ratio = 0
+                for knowledge in knowledge_base:
+                    ratio = SequenceMatcher(None, clean_text, knowledge).ratio()
+                    if ratio >= 0.75 and ratio > best_ratio:
+                        best_ratio = ratio
+                        best_match = knowledge
+                return best_match, best_ratio
+
+            def finalize_formatting(text):
+                if not text: return None
+                t = text.upper().replace(".", "").replace("-", "").replace(" ", "")
+                if len(t) >= 3:
+                    res = t[:2] + t[2]
+                    if len(t) > 3:
+                        res += "." + t[3:]
+                    return res
+                return t
+
+            def format_plate_vietnam(text):
+                if not text: return None, False
+                matched, ratio = get_best_match(text)
+                if matched:
+                    return finalize_formatting(matched), True
+                clean = re.sub(r'[^A-Z0-9]', '', text.upper())
+                if len(clean) >= 7 and re.match(r'^\d{2}[A-Z]', clean):
+                    return finalize_formatting(clean), False
+                return None, False
+
+            frame_count = 0
+            start_time = time.time()
+            
+            global latest_processed_frame
+            
+            while cap.isOpened() and not self.stop_event.is_set():
+                ret, frame = cap.read()
+                if not ret:
+                    if isinstance(self.source_path, str) and not self.source_path.startswith("rtsp") and not self.source_path.startswith("http"):
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        continue
+                    else:
+                        break
+                        
+                frame_count += 1
+                self.processed_frames = frame_count
+                
+                elapsed = time.time() - start_time
+                if elapsed > 1.0:
+                    self.fps = round(frame_count / elapsed, 1)
+                    start_time = time.time()
+                    frame_count = 0
+                    
+                if frame_count % 2 != 0:
+                    continue
+                    
+                v_results = vehicle_model.track(frame, conf=0.25, persist=True, verbose=False, imgsz=640, classes=[2, 3, 5, 7], device=target_device_vehicle)
+                p_results = plate_model.predict(frame, conf=0.35, verbose=False, imgsz=640, device=target_device_plate)
+                
+                current_detections = []
+                if v_results[0].boxes.id is not None:
+                    v_boxes = v_results[0].boxes.xyxy.cpu().numpy().astype(int)
+                    v_ids = v_results[0].boxes.id.cpu().numpy().astype(int)
+                    v_cls = v_results[0].boxes.cls.cpu().numpy().astype(int)
+                    v_names = v_results[0].names
+                    
+                    for box, track_id, cls_id in zip(v_boxes, v_ids, v_cls):
+                        v_type = v_names[cls_id].upper()
+                        if track_id not in tracked_objects:
+                            tracked_objects[track_id] = {
+                                "v_type": v_type, "plate": "SCANNING", "locked": False, "candidates": {}, "last_seen": time.time()
+                            }
+                        
+                        obj = tracked_objects[track_id]
+                        obj["last_seen"] = time.time()
+                        
+                        for p_box in p_results[0].boxes.xyxy.cpu().numpy().astype(int):
+                            px1, py1, px2, py2 = p_box
+                            if px1 > box[0]-20 and py1 > box[1]-20 and px2 < box[2]+20 and py2 < box[3]+20:
+                                if not obj["locked"]:
+                                    plate_crop = frame[py1:py2, px1:px2]
+                                    if plate_crop.size > 0:
+                                        enhanced_plate = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY)
+                                        enhanced_plate = cv2.resize(enhanced_plate, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+                                        ocr_results = reader.readtext(enhanced_plate)
+                                        raw_text = "".join([res[1] for res in ocr_results if res[2] > 0.15])
+                                        text, is_trusted = format_plate_vietnam(raw_text)
+                                        
+                                        if text:
+                                            obj["candidates"][text] = obj["candidates"].get(text, 0) + 1
+                                            best = max(obj["candidates"], key=obj["candidates"].get)
+                                            obj["plate"] = best
+                                            
+                                            db_session = SessionLocal()
+                                            try:
+                                                is_logged = db_session.query(Detection).filter(Detection.plate_text == best, Detection.deleted_at == None).first() is not None
+                                                threshold = 1 if is_trusted else 2
+                                                if obj["candidates"][best] >= threshold and not is_logged:
+                                                    obj["locked"] = True
+                                                    
+                                                    crop_path = None
+                                                    try:
+                                                        crop_dir = os.path.join("static", "crops")
+                                                        os.makedirs(crop_dir, exist_ok=True)
+                                                        timestamp_slug = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                        crop_filename = f"{best.replace('.', '').replace('-', '')}_{timestamp_slug}.jpg"
+                                                        crop_filepath = os.path.join(crop_dir, crop_filename)
+                                                        cv2.imwrite(crop_filepath, plate_crop)
+                                                        crop_path = f"static/crops/{crop_filename}"
+                                                    except Exception as ex:
+                                                        print(f"Error saving crop: {ex}")
+                                                        
+                                                    new_det = Detection(
+                                                        timestamp=datetime.datetime.now(),
+                                                        plate_text=best,
+                                                        vehicle_type=obj["v_type"],
+                                                        confidence=1.0 if is_trusted else 0.85,
+                                                        payment_status="UNPAID",
+                                                        package_type="STANDARD",
+                                                        crop_path=crop_path,
+                                                        lane="Lane 1"
+                                                    )
+                                                    db_session.add(new_det)
+                                                    db_session.commit()
+                                                    
+                                                    # Loopback notify to local endpoint
+                                                    def notify_app(plate, v_type, c_path):
+                                                        import urllib.request
+                                                        import json
+                                                        try:
+                                                            req_data = json.dumps({
+                                                                "plate": plate,
+                                                                "type": v_type,
+                                                                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                                                "status": "UNPAID",
+                                                                "package": "STANDARD",
+                                                                "crop_path": c_path or ""
+                                                            }).encode('utf-8')
+                                                            req = urllib.request.Request(
+                                                                "http://localhost:8001/api/internal/notify",
+                                                                data=req_data,
+                                                                headers={'Content-Type': 'application/json'}
+                                                            )
+                                                            with urllib.request.urlopen(req, timeout=1.0) as response:
+                                                                response.read()
+                                                        except Exception:
+                                                            pass
+                                                    threading.Thread(target=notify_app, args=(best, obj["v_type"], crop_path), daemon=True).start()
+                                                    print(f"[BOT LOGGED] {best} | {obj['v_type']}")
+                                            except Exception as e:
+                                                print(f"DB Error inside thread: {e}")
+                                            finally:
+                                                db_session.close()
+                                                
+                        current_detections.append({
+                            "box": box, "plate": obj["plate"], "locked": obj["locked"]
+                        })
+                        
+                for det in current_detections:
+                    bx1, by1, bx2, by2 = det["box"]
+                    color = (0, 255, 0) if det["locked"] else (0, 165, 255)
+                    cv2.rectangle(frame, (bx1, by1), (bx2, by2), color, 2)
+                    cv2.putText(frame, f"{det['plate']}", (bx1, by1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+                    
+                cv2.putText(frame, f"TrafficAI BOT Camera - FPS: {self.fps}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                
+                frame_resized = cv2.resize(frame, (1280, 720))
+                _, jpeg = cv2.imencode('.jpg', frame_resized)
+                
+                with latest_frame_lock:
+                    latest_processed_frame = jpeg.tobytes()
+                    
+                now_time = time.monotonic()
+                if now_time - last_seen_cleanup > 5:
+                    to_del = [tid for tid, o in tracked_objects.items() if now_time - o["last_seen"] > 3]
+                    for tid in to_del: del tracked_objects[tid]
+                    last_seen_cleanup = now_time
+                    
+            cap.release()
+            self.status = "Finished"
+        except Exception as err:
+            self.status = f"Error: {err}"
+            print(f"Error inside AI Thread: {err}")
 
 
 class LoginRequest(BaseModel):
@@ -213,6 +504,8 @@ class Detection(Base):
     lane = Column(String, nullable=True)
     speed_kmh = Column(Float, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
+    crop_path = Column(String, nullable=True)
+    direction = Column(String, nullable=True)
 
 
 class DetectionHistory(Base):
@@ -383,6 +676,7 @@ def detection_payload(row: Detection) -> dict:
         "lane": row.lane,
         "blacklist_reason": row.blacklist_reason,
         "deleted_at": iso_dt(row.deleted_at),
+        "crop_path": row.crop_path or "",
     }
 
 
@@ -400,22 +694,27 @@ def migrate_legacy_schema():
         "ALTER TABLE detections ADD COLUMN lane TEXT",
         "ALTER TABLE detections ADD COLUMN speed_kmh REAL",
         "ALTER TABLE detections ADD COLUMN deleted_at DATETIME",
+        "ALTER TABLE detections ADD COLUMN crop_path TEXT",
+        "ALTER TABLE detections ADD COLUMN direction TEXT",
     ]
     for sql in migrations:
         try:
             cur.execute(sql)
         except sqlite3.OperationalError:
             pass
-    cur.execute("UPDATE detections SET payment_status = 'UNPAID' WHERE payment_status IS NULL OR payment_status = ''")
-    cur.execute("UPDATE detections SET package_type = 'STANDARD' WHERE package_type IS NULL OR package_type = '' OR package_type = 'NONE'")
+    try:
+        cur.execute("UPDATE detections SET payment_status = 'UNPAID' WHERE payment_status IS NULL OR payment_status = ''")
+        cur.execute("UPDATE detections SET package_type = 'STANDARD' WHERE package_type IS NULL OR package_type = '' OR package_type = 'NONE'")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    migrate_legacy_schema()
     Base.metadata.create_all(bind=engine)
+    migrate_legacy_schema()
 
     db = SessionLocal()
     defaults = {
@@ -433,6 +732,17 @@ async def lifespan(app: FastAPI):
 
     if not scheduler.running:
         scheduler.start()
+
+    # Pre-load AI models and reader in the background during server boot so start is instant!
+    def pre_load():
+        try:
+            get_ai_models()
+            get_easyocr_reader()
+            print("[AI ENGINE] Models pre-loaded successfully in background!")
+        except Exception as e:
+            print(f"[AI ENGINE] Error pre-loading models in background: {e}")
+    threading.Thread(target=pre_load, daemon=True).start()
+
     yield
     if scheduler.running:
         scheduler.shutdown()
@@ -949,6 +1259,221 @@ async def websocket_endpoint(websocket: WebSocket):
         if connected:
             manager.disconnect(websocket)
         traffic_shield.disconnect_ws(client_ip)
+
+
+@app.post("/api/internal/notify")
+async def notify_new_detection(payload: dict):
+    await manager.broadcast({
+        "event": "new_detection",
+        "data": payload
+    })
+    return {"status": "success"}
+
+
+# --- ADVANCED AI CONTROL AND STREAMING ENDPOINTS ---
+
+@app.post("/api/ai/upload")
+async def upload_video(file: UploadFile = File(...), current: dict = Depends(require_role(["admin", "operator"]))):
+    if not file.filename.endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Only MP4 videos are allowed")
+    
+    uploads_dir = os.path.join("static", "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    
+    safe_name = f"{uuid.uuid4().hex}_{re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)}"
+    file_path = os.path.join(uploads_dir, safe_name)
+    
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+        
+    return {"status": "success", "filename": safe_name, "path": f"static/uploads/{safe_name}"}
+
+
+@app.get("/api/ai/videos")
+def list_videos(current: dict = Depends(get_current_user)):
+    uploads_dir = os.path.join("static", "uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    files = []
+    for f in os.listdir(uploads_dir):
+        if f.endswith(".mp4"):
+            files.append({
+                "filename": f,
+                "path": f"static/uploads/{f}"
+            })
+    return files
+
+
+@app.post("/api/ai/start")
+def start_ai(source: str = Query(...), current: dict = Depends(require_role(["admin", "operator"]))):
+    global ai_engine_running, ai_engine_thread, latest_processed_frame
+    
+    if ai_engine_running:
+        raise HTTPException(status_code=400, detail="AI engine is already running")
+        
+    # Resolve source path
+    if source.isdigit():
+        resolved_source = int(source)
+    elif source.startswith("rtsp://") or source.startswith("http://") or source.startswith("https://"):
+        resolved_source = source
+    else:
+        # Check in static/uploads or main folder
+        uploads_path = os.path.join("static", "uploads", source)
+        if os.path.exists(uploads_path):
+            resolved_source = uploads_path
+        elif os.path.exists(source):
+            resolved_source = source
+        else:
+            raise HTTPException(status_code=404, detail=f"Source video not found: {source}")
+            
+    # --- INSTANT-START OPTIMIZATION ---
+    # Draw a premium glowing loading panel to publish instantly so the UI has zero connection lag
+    try:
+        import cv2
+        import numpy as np
+        loading_img = np.zeros((720, 1280, 3), dtype=np.uint8)
+        # Background dark matching premium neon HSL theme
+        loading_img[:] = (10, 7, 5)
+        # Draw dark panel border
+        cv2.rectangle(loading_img, (40, 40), (1240, 680), (33, 27, 21), 2)
+        # Glowing Teal/Emerald details
+        cv2.putText(loading_img, "KBN TRAFFIC-AI ENGINE v6.5", (100, 240), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (191, 212, 45), 3) # Teal/Emerald
+        cv2.putText(loading_img, "DANG KET NOI CAMERA BOT...", (100, 320), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        
+        if isinstance(resolved_source, int):
+            src_text = "Nguon: Camera may tinh (Cong 0)" if resolved_source == 0 else "Nguon: Camera dien thoai / Cam phu (Cong 1)"
+        else:
+            src_text = f"Nguon: {source}"
+        cv2.putText(loading_img, src_text, (100, 400), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (184, 163, 148), 2)
+        cv2.putText(loading_img, "Vui long doi giay, dang khoi chay YOLOv8 + OpenVINO...", (100, 480), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (94, 197, 34), 2) # Green
+        
+        _, jpeg = cv2.imencode('.jpg', loading_img)
+        with latest_frame_lock:
+            latest_processed_frame = jpeg.tobytes()
+    except Exception as ex:
+        print(f"Error drawing loading frame: {ex}")
+    # ----------------------------------
+
+    # Start the engine thread
+    ai_engine_thread = TrafficAIEngine(resolved_source)
+    ai_engine_running = True
+    ai_engine_thread.start()
+    
+    return {"status": "success", "message": f"Started AI Engine on {source}"}
+
+
+@app.post("/api/ai/stop")
+def stop_ai(current: dict = Depends(require_role(["admin", "operator"]))):
+    global ai_engine_running, ai_engine_thread, latest_processed_frame
+    
+    if not ai_engine_running or ai_engine_thread is None:
+        return {"status": "success", "message": "AI engine was not running"}
+        
+    # Stop thread
+    ai_engine_thread.stop_event.set()
+    ai_engine_thread.join(timeout=2.0)
+    
+    ai_engine_running = False
+    ai_engine_thread = None
+    with latest_frame_lock:
+        latest_processed_frame = None
+        
+    return {"status": "success", "message": "Stopped AI Engine"}
+
+
+@app.get("/api/ai/status")
+def get_ai_status(current: dict = Depends(get_current_user)):
+    global ai_engine_running, ai_engine_thread
+    
+    if not ai_engine_running or ai_engine_thread is None:
+        return {
+            "running": False,
+            "status": "Idle",
+            "fps": 0,
+            "processed_frames": 0
+        }
+        
+    return {
+        "running": True,
+        "status": ai_engine_thread.status,
+        "fps": ai_engine_thread.fps,
+        "processed_frames": ai_engine_thread.processed_frames
+    }
+
+
+@app.get("/api/stream")
+def video_stream():
+    def frame_generator():
+        global latest_processed_frame, ai_engine_running
+        last_sent_frame = None
+        while ai_engine_running:
+            frame = None
+            with latest_frame_lock:
+                frame = latest_processed_frame
+            if frame is not None and frame != last_sent_frame:
+                last_sent_frame = frame
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            else:
+                time.sleep(0.03)
+        # Yield empty bytes when server stops or AI stops to close connection nicely
+        yield b''
+            
+    return StreamingResponse(
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.get("/api/reports/charts")
+def get_reports_charts(
+    days: int = Query(14, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _: dict = Depends(get_current_user),
+):
+    price = get_price_per_vehicle(db)
+    start_date = (datetime.utcnow() - timedelta(days=days - 1)).date()
+    daily = {
+        (start_date + timedelta(days=offset)).isoformat(): {
+            "date": (start_date + timedelta(days=offset)).isoformat(),
+            "total": 0,
+            "paid": 0,
+            "unpaid": 0,
+            "blacklisted": 0,
+            "revenue": 0,
+        }
+        for offset in range(days)
+    }
+    
+    vehicle_types = {"CAR": 0, "TRUCK": 0, "BUS": 0}
+    
+    rows = db.query(Detection).filter(Detection.deleted_at == None).all()
+    for row in rows:
+        status = row.payment_status if row.payment_status in VALID_STATUSES else "UNPAID"
+        v_type = (row.vehicle_type or "CAR").upper()
+        if v_type in vehicle_types:
+            vehicle_types[v_type] += 1
+        else:
+            vehicle_types[v_type] = vehicle_types.get(v_type, 0) + 1
+            
+        timestamp = parse_dt(row.timestamp)
+        if not timestamp:
+            continue
+        key = timestamp.date().isoformat()
+        if key not in daily:
+            continue
+        daily[key]["total"] += 1
+        daily[key][status.lower()] += 1
+        if status == "PAID":
+            daily[key]["revenue"] += price
+            
+    sorted_vehicle_types = dict(sorted(vehicle_types.items(), key=lambda item: item[1], reverse=True))
+    
+    return {
+        "days": days,
+        "daily": list(daily.values()),
+        "vehicle_types": sorted_vehicle_types
+    }
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")

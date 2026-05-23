@@ -56,6 +56,9 @@ async function doLogin(event) {
 
 function initSystem() {
     setupWS();
+    setupDragAndDrop();
+    loadVideos();
+    checkCurrentAIStatus();
     refreshAll();
 }
 
@@ -127,14 +130,18 @@ function renderVehicles(data, clear) {
     const container = document.getElementById("vehicle-rows");
     if (clear) container.innerHTML = "";
     if (!data.length && clear) {
-        container.innerHTML = emptyRow("Chua co du lieu nhan dien", 6);
+        container.innerHTML = emptyRow("Chua co du lieu nhan dien", 7);
         return;
     }
 
     container.insertAdjacentHTML("beforeend", data.map(row => {
         const isBlacklisted = row.status === "BLACKLISTED";
+        const imgHtml = row.crop_path 
+            ? `<img src="/${row.crop_path}" class="table-thumbnail" onclick="viewPhoto('/${row.crop_path}', '${escapeAttr(row.plate)}')" alt="Plate">` 
+            : `<div class="no-photo-badge"><i data-lucide="image-off"></i></div>`;
         return `
             <tr id="row-${row.id}" class="fade-in">
+                <td>${imgHtml}</td>
                 <td><span class="plate-badge">${escapeHtml(row.plate || "N/A")}</span></td>
                 <td>${escapeHtml(row.type || "UNKNOWN")}</td>
                 <td>${formatTime(row.timestamp)}</td>
@@ -162,17 +169,23 @@ async function loadRecords() {
     const payload = await res.json();
     setText("record-count", `${payload.total} ban ghi`);
     const container = document.getElementById("record-rows");
-    container.innerHTML = payload.data.length ? payload.data.map(row => `
-        <tr>
-            <td><span class="plate-badge">${escapeHtml(row.plate || "N/A")}</span></td>
-            <td>${escapeHtml(row.type || "UNKNOWN")}</td>
-            <td>${formatDateTime(row.timestamp)}</td>
-            <td><span class="status-tag ${(row.status || "").toLowerCase()}">${escapeHtml(row.status || "N/A")}</span></td>
-            <td>${escapeHtml(row.package || "STANDARD")}</td>
-            <td>${row.confidence ? `${Math.round(row.confidence * 100)}%` : "N/A"}</td>
-            <td><button class="btn-action" data-action="history" data-plate="${escapeAttr(row.plate)}" title="History"><i data-lucide="history"></i></button></td>
-        </tr>
-    `).join("") : emptyRow("Khong co ban ghi phu hop", 7);
+    container.innerHTML = payload.data.length ? payload.data.map(row => {
+        const imgHtml = row.crop_path 
+            ? `<img src="/${row.crop_path}" class="table-thumbnail" onclick="viewPhoto('/${row.crop_path}', '${escapeAttr(row.plate)}')" alt="Plate">` 
+            : `<div class="no-photo-badge"><i data-lucide="image-off"></i></div>`;
+        return `
+            <tr>
+                <td>${imgHtml}</td>
+                <td><span class="plate-badge">${escapeHtml(row.plate || "N/A")}</span></td>
+                <td>${escapeHtml(row.type || "UNKNOWN")}</td>
+                <td>${formatDateTime(row.timestamp)}</td>
+                <td><span class="status-tag ${(row.status || "").toLowerCase()}">${escapeHtml(row.status || "N/A")}</span></td>
+                <td>${escapeHtml(row.package || "STANDARD")}</td>
+                <td>${row.confidence ? `${Math.round(row.confidence * 100)}%` : "N/A"}</td>
+                <td><button class="btn-action" data-action="history" data-plate="${escapeAttr(row.plate)}" title="History"><i data-lucide="history"></i></button></td>
+            </tr>
+        `;
+    }).join("") : emptyRow("Khong co ban ghi phu hop", 8);
     lucide.createIcons();
 }
 
@@ -309,6 +322,9 @@ async function loadReports() {
     typeRows.innerHTML = entries.length ? entries.map(([type, count]) => `
         <tr><td>${escapeHtml(type)}</td><td>${count}</td></tr>
     `).join("") : emptyRow("Chua co du lieu loai xe", 2);
+
+    // FEATURE 4: Update ApexCharts dynamically
+    updateCharts(payload);
 }
 
 async function exportVehicles() {
@@ -371,15 +387,21 @@ async function loadTrash() {
     if (!res?.ok) return;
     const data = await res.json();
     const container = document.getElementById("trash-rows");
-    container.innerHTML = data.length ? data.map(row => `
-        <tr>
-            <td><span class="plate-badge">${escapeHtml(row.plate_text || "N/A")}</span></td>
-            <td>${escapeHtml(row.vehicle_type || "UNKNOWN")}</td>
-            <td>${formatDateTime(row.deleted_at)}</td>
-            <td><span class="status-tag ${(row.payment_status || "").toLowerCase()}">${escapeHtml(row.payment_status || "")}</span></td>
-            <td><button class="btn-action" data-action="restore" data-plate="${escapeAttr(row.plate_text)}" title="Restore"><i data-lucide="refresh-cw"></i></button></td>
-        </tr>
-    `).join("") : emptyRow("Trash dang trong", 5);
+    container.innerHTML = data.length ? data.map(row => {
+        const imgHtml = row.crop_path 
+            ? `<img src="/${row.crop_path}" class="table-thumbnail" onclick="viewPhoto('/${row.crop_path}', '${escapeAttr(row.plate_text)}')" alt="Plate">` 
+            : `<div class="no-photo-badge"><i data-lucide="image-off"></i></div>`;
+        return `
+            <tr>
+                <td>${imgHtml}</td>
+                <td><span class="plate-badge">${escapeHtml(row.plate_text || "N/A")}</span></td>
+                <td>${escapeHtml(row.vehicle_type || "UNKNOWN")}</td>
+                <td>${formatDateTime(row.deleted_at)}</td>
+                <td><span class="status-tag ${(row.payment_status || "").toLowerCase()}">${escapeHtml(row.payment_status || "")}</span></td>
+                <td><button class="btn-action" data-action="restore" data-plate="${escapeAttr(row.plate_text)}" title="Restore"><i data-lucide="refresh-cw"></i></button></td>
+            </tr>
+        `;
+    }).join("") : emptyRow("Trash dang trong", 6);
     lucide.createIcons();
 }
 
@@ -402,7 +424,18 @@ function setupWS() {
     if (State.ws) State.ws.close();
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     State.ws = new WebSocket(`${scheme}://${location.host}/ws`);
-    State.ws.onmessage = () => {
+    State.ws.onmessage = (event) => {
+        try {
+            const payload = JSON.parse(event.data);
+            if (payload && payload.event === "new_detection") {
+                const info = payload.data || {};
+                playChime();
+                showToast(`Đã phát hiện xe mới: ${info.plate || "N/A"} (${info.type || "UNKNOWN"})`, "success");
+            }
+        } catch (e) {
+            // Fallback for regular updates
+        }
+
         syncStats();
         if (State.activeTab === "dashboard") syncVehicles(true);
         if (State.activeTab === "records") loadRecords();
@@ -505,4 +538,443 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
     return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function playChime() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioCtx.currentTime;
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(659.25, now); // E5
+        gain1.gain.setValueAtTime(0.12, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.35);
+        
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(880.00, now + 0.08); // A5
+        gain2.gain.setValueAtTime(0.12, now + 0.08);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(now + 0.08);
+        osc2.stop(now + 0.55);
+    } catch (e) {
+        console.warn("Chime blocked by auto-play policies", e);
+    }
+}
+
+function viewPhoto(path, plate) {
+    openModal(`Snapshot - ${escapeHtml(plate)}`, `
+        <div class="modal-photo-frame">
+            <img src="${path}" alt="License Plate Crop">
+        </div>
+        <div class="detail-list">
+            <div class="detail-item"><span>Biển kiểm soát</span><strong>${escapeHtml(plate)}</strong></div>
+            <div class="detail-item"><span>Đường dẫn ảnh</span><strong style="font-family: var(--font-mono); font-size: 0.8rem;">${escapeHtml(path)}</strong></div>
+        </div>
+    `);
+}
+
+
+// --- LIVE AI MONITOR & CONTROLS ---
+
+let aiStatusPollInterval = null;
+
+function toggleSourceInput() {
+    const sourceSelect = document.getElementById("video-source");
+    const customUrlGroup = document.getElementById("custom-url-group");
+    if (sourceSelect.value === "custom") {
+        customUrlGroup.style.display = "flex";
+    } else {
+        customUrlGroup.style.display = "none";
+    }
+}
+
+function triggerFileInput() {
+    document.getElementById("file-input").click();
+}
+
+async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    uploadFile(file);
+}
+
+async function uploadFile(file) {
+    if (!file.name.endsWith(".mp4")) {
+        showToast("Chỉ hỗ trợ định dạng video MP4!", "warning");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const progressDiv = document.getElementById("upload-progress");
+    const progressFill = document.getElementById("progress-fill");
+    const progressText = document.getElementById("progress-text");
+
+    progressDiv.style.display = "flex";
+    progressFill.style.width = "0%";
+    progressText.textContent = "0%";
+
+    try {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/ai/upload", true);
+        
+        if (State.user?.token) {
+            xhr.setRequestHeader("Authorization", `Bearer ${State.user.token}`);
+        }
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                progressFill.style.width = `${percent}%`;
+                progressText.textContent = `${percent}%`;
+            }
+        };
+
+        xhr.onload = async () => {
+            progressDiv.style.display = "none";
+            if (xhr.status === 200) {
+                showToast("Tải video lên thành công!", "success");
+                await loadVideos();
+                const resData = JSON.parse(xhr.responseText);
+                const sourceSelect = document.getElementById("video-source");
+                sourceSelect.value = resData.filename;
+                toggleSourceInput();
+            } else {
+                const errData = JSON.parse(xhr.responseText || "{}");
+                showToast(errData.detail || "Tải video lên thất bại!", "danger");
+            }
+        };
+
+        xhr.onerror = () => {
+            progressDiv.style.display = "none";
+            showToast("Có lỗi mạng xảy ra khi tải video!", "danger");
+        };
+
+        xhr.send(formData);
+    } catch (err) {
+        progressDiv.style.display = "none";
+        showToast("Lỗi tải video lên!", "danger");
+    }
+}
+
+function setupDragAndDrop() {
+    const dropzone = document.getElementById("dropzone");
+    if (!dropzone) return;
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('dragover');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('dragover');
+        }, false);
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+            uploadFile(files[0]);
+        }
+    }, false);
+}
+
+async function loadVideos() {
+    const sourceSelect = document.getElementById("video-source");
+    if (!sourceSelect) return;
+
+    const res = await apiFetch("/api/ai/videos");
+    if (!res?.ok) return;
+    const videos = await res.json();
+
+    sourceSelect.innerHTML = `
+        <option value="test_bot_cutted.mp4">Video BOT Mẫu (Mặc định)</option>
+        <option value="0">Camera máy tính (Cổng 0)</option>
+        <option value="1">Camera điện thoại / Cam phụ (Cổng 1)</option>
+        <option value="custom">-- Luồng RTSP / Custom URL --</option>
+    `;
+
+    videos.forEach(v => {
+        const opt = document.createElement("option");
+        opt.value = v.filename;
+        opt.textContent = `Video Uploaded: ${v.filename.substring(33)}`;
+        sourceSelect.appendChild(opt);
+    });
+}
+
+async function startAI() {
+    const sourceSelect = document.getElementById("video-source");
+    let source = sourceSelect.value;
+    if (source === "custom") {
+        source = document.getElementById("custom-url").value.trim();
+        if (!source) {
+            showToast("Vui lòng nhập đường dẫn Custom URL hoặc RTSP!", "warning");
+            return;
+        }
+    }
+
+    const res = await apiFetch(`/api/ai/start?source=${encodeURIComponent(source)}`, { method: "POST" });
+    if (!res?.ok) return;
+
+    showToast("Đã khởi chạy luồng xử lý AI giám sát BOT!", "success");
+    
+    const liveFeed = document.getElementById("live-feed");
+    const placeholder = document.getElementById("monitor-placeholder");
+    const badge = document.getElementById("monitor-badge");
+    const btnStart = document.getElementById("btn-start");
+    const btnStop = document.getElementById("btn-stop");
+
+    liveFeed.src = `/api/stream?t=${Date.now()}`;
+    liveFeed.style.display = "block";
+    placeholder.style.display = "none";
+
+    badge.textContent = "ONLINE";
+    badge.className = "monitor-badge online";
+
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+
+    if (aiStatusPollInterval) clearInterval(aiStatusPollInterval);
+    aiStatusPollInterval = setInterval(pollAIStatus, 1000);
+}
+
+async function stopAI() {
+    const res = await apiFetch("/api/ai/stop", { method: "POST" });
+    if (!res?.ok) return;
+
+    showToast("Đã tạm dừng luồng giám sát BOT!", "warning");
+    setMonitorOfflineUI();
+}
+
+function setMonitorOfflineUI() {
+    const liveFeed = document.getElementById("live-feed");
+    const placeholder = document.getElementById("monitor-placeholder");
+    const badge = document.getElementById("monitor-badge");
+    const btnStart = document.getElementById("btn-start");
+    const btnStop = document.getElementById("btn-stop");
+
+    liveFeed.src = "";
+    liveFeed.style.display = "none";
+    placeholder.style.display = "block";
+
+    badge.textContent = "OFFLINE";
+    badge.className = "monitor-badge offline";
+
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+
+    document.getElementById("monitor-fps").innerHTML = `<i data-lucide="cpu"></i> FPS: 0`;
+    document.getElementById("monitor-count").innerHTML = `<i data-lucide="car"></i> Đã xử lý: 0`;
+    lucide.createIcons();
+
+    if (aiStatusPollInterval) {
+        clearInterval(aiStatusPollInterval);
+        aiStatusPollInterval = null;
+    }
+}
+
+async function pollAIStatus() {
+    const res = await apiFetch("/api/ai/status");
+    if (!res?.ok) return;
+    const status = await res.json();
+
+    if (status.running) {
+        const badge = document.getElementById("monitor-badge");
+        badge.textContent = status.status.toUpperCase();
+        badge.className = "monitor-badge online";
+
+        document.getElementById("monitor-fps").innerHTML = `<i data-lucide="cpu"></i> FPS: ${status.fps}`;
+        document.getElementById("monitor-count").innerHTML = `<i data-lucide="car"></i> Đã xử lý: ${status.processed_frames}`;
+        lucide.createIcons();
+    } else {
+        setMonitorOfflineUI();
+        refreshAll();
+    }
+}
+
+async function checkCurrentAIStatus() {
+    const res = await apiFetch("/api/ai/status");
+    if (!res?.ok) return;
+    const status = await res.json();
+
+    if (status.running) {
+        const liveFeed = document.getElementById("live-feed");
+        const placeholder = document.getElementById("monitor-placeholder");
+        const badge = document.getElementById("monitor-badge");
+        const btnStart = document.getElementById("btn-start");
+        const btnStop = document.getElementById("btn-stop");
+
+        liveFeed.src = "/api/stream";
+        liveFeed.style.display = "block";
+        placeholder.style.display = "none";
+
+        badge.textContent = status.status.toUpperCase();
+        badge.className = "monitor-badge online";
+
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+
+        if (aiStatusPollInterval) clearInterval(aiStatusPollInterval);
+        aiStatusPollInterval = setInterval(pollAIStatus, 1000);
+    }
+}
+
+// --- APEXCHARTS ANALYTICS INTEGRATION ---
+
+let trafficChart = null;
+let vehicleTypeChart = null;
+
+function initCharts() {
+    const trafficContainer = document.querySelector("#chart-traffic");
+    const typesContainer = document.querySelector("#chart-types");
+    if (!trafficContainer || !typesContainer) return;
+    if (trafficChart && vehicleTypeChart) return;
+
+    // 1. Traffic & Revenue Chart (Area Chart)
+    const trafficOptions = {
+        chart: {
+            type: 'area',
+            height: 320,
+            background: 'transparent',
+            toolbar: { show: false },
+            foreColor: '#94a3b8'
+        },
+        colors: ['#2dd4bf', '#22c55e'],
+        stroke: { curve: 'smooth', width: 3 },
+        fill: {
+            type: 'gradient',
+            gradient: {
+                shadeIntensity: 1,
+                opacityFrom: 0.35,
+                opacityTo: 0.05,
+                stops: [0, 90, 100]
+            }
+        },
+        dataLabels: { enabled: false },
+        series: [
+            { name: 'Tổng số xe', data: [] },
+            { name: 'Doanh thu (k VND)', data: [] }
+        ],
+        xaxis: {
+            categories: [],
+            axisBorder: { show: false },
+            axisTicks: { show: false }
+        },
+        yaxis: [
+            {
+                title: { text: 'Số lượt xe' },
+                labels: {
+                    formatter: val => Math.round(val)
+                }
+            },
+            {
+                opposite: true,
+                title: { text: 'Doanh thu (k VND)' },
+                labels: {
+                    formatter: val => `${val.toLocaleString()}k`
+                }
+            }
+        ],
+        grid: {
+            borderColor: 'rgba(255, 255, 255, 0.08)',
+            strokeDashArray: 4
+        },
+        legend: {
+            position: 'top',
+            horizontalAlign: 'right'
+        },
+        theme: { mode: 'dark' }
+    };
+
+    trafficChart = new ApexCharts(trafficContainer, trafficOptions);
+    trafficChart.render();
+
+    // 2. Vehicle Categories Chart (Donut Chart)
+    const typeOptions = {
+        chart: {
+            type: 'donut',
+            height: 320,
+            background: 'transparent',
+            foreColor: '#94a3b8'
+        },
+        colors: ['#2dd4bf', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'],
+        series: [],
+        labels: [],
+        plotOptions: {
+            pie: {
+                donut: {
+                    size: '70%',
+                    labels: {
+                        show: true,
+                        total: {
+                            show: true,
+                            label: 'Tổng xe',
+                            color: '#f8fafc',
+                            formatter: w => {
+                                return w.globals.seriesTotals.reduce((a, b) => a + b, 0);
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        legend: {
+            position: 'bottom'
+        },
+        dataLabels: { enabled: false },
+        theme: { mode: 'dark' }
+    };
+
+    vehicleTypeChart = new ApexCharts(typesContainer, typeOptions);
+    vehicleTypeChart.render();
+}
+
+function updateCharts(payload) {
+    const trafficContainer = document.querySelector("#chart-traffic");
+    const typesContainer = document.querySelector("#chart-types");
+    if (!trafficContainer || !typesContainer) return;
+    
+    if (!trafficChart || !vehicleTypeChart) {
+        initCharts();
+    }
+
+    const categories = payload.daily.map(row => {
+        const parts = row.date.split('-');
+        return parts.length >= 3 ? `${parts[2]}/${parts[1]}` : row.date;
+    });
+    const vehicleCounts = payload.daily.map(row => row.total);
+    const revenueK = payload.daily.map(row => row.revenue / 1000);
+
+    trafficChart.updateSeries([
+        { name: 'Tổng số xe', data: vehicleCounts },
+        { name: 'Doanh thu (k VND)', data: revenueK }
+    ]);
+    trafficChart.updateOptions({
+        xaxis: { categories: categories }
+    });
+
+    const types = Object.keys(payload.vehicle_types || {});
+    const counts = Object.values(payload.vehicle_types || {});
+
+    vehicleTypeChart.updateSeries(counts);
+    vehicleTypeChart.updateOptions({
+        labels: types
+    });
 }

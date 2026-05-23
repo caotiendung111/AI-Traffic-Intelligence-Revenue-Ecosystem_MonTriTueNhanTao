@@ -194,13 +194,52 @@ class ProcessorWorker(threading.Thread):
                                             threshold = 1 if is_trusted else STABILITY_THRESHOLD
                                             if obj["candidates"][best] >= threshold:
                                                 obj["locked"] = True
+                                                
+                                                # Save crop image
+                                                crop_path = None
+                                                try:
+                                                    crop_dir = os.path.join("static", "crops")
+                                                    os.makedirs(crop_dir, exist_ok=True)
+                                                    timestamp_slug = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                    crop_filename = f"{best.replace('.', '').replace('-', '')}_{timestamp_slug}.jpg"
+                                                    crop_filepath = os.path.join(crop_dir, crop_filename)
+                                                    cv2.imwrite(crop_filepath, plate_crop)
+                                                    crop_path = f"static/crops/{crop_filename}"
+                                                except Exception as ex:
+                                                    print(f"[ERROR] Failed to save crop: {ex}")
+
                                                 with lock:
                                                     last_plate_text = best
                                                     last_plate_crop = plate_crop.copy()
                                                     last_v_type = obj["v_type"]
-                                                    db.log_detection(best, obj["v_type"], 0.0, "UNKNOWN", 1.0)
+                                                    db.log_detection(best, obj["v_type"], 0.0, "UNKNOWN", 1.0, crop_path=crop_path)
                                                     export_db_to_csv()
                                                     print(f"[LOGGED] {best} | {obj['v_type']}")
+                                                    
+                                                # Notify Uvicorn server local endpoint using standard urllib in a daemon thread
+                                                def notify_app(plate, v_type, c_path):
+                                                    import urllib.request
+                                                    import json
+                                                    try:
+                                                        req_data = json.dumps({
+                                                            "plate": plate,
+                                                            "type": v_type,
+                                                            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                                            "status": "UNPAID",
+                                                            "package": "STANDARD",
+                                                            "crop_path": c_path or ""
+                                                        }).encode('utf-8')
+                                                        req = urllib.request.Request(
+                                                            "http://localhost:8001/api/internal/notify",
+                                                            data=req_data,
+                                                            headers={'Content-Type': 'application/json'}
+                                                        )
+                                                        with urllib.request.urlopen(req, timeout=1.0) as response:
+                                                            response.read()
+                                                    except Exception:
+                                                        pass
+                                                        
+                                                threading.Thread(target=notify_app, args=(best, obj["v_type"], crop_path), daemon=True).start()
                                             else:
                                                 with lock:
                                                     last_plate_text = best

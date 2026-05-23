@@ -23,7 +23,8 @@ class DatabaseManager:
                 package_type TEXT DEFAULT 'STANDARD',
                 blacklist_reason TEXT,
                 lane TEXT,
-                deleted_at DATETIME
+                deleted_at DATETIME,
+                crop_path TEXT
             )
         ''')
         migrations = [
@@ -32,6 +33,7 @@ class DatabaseManager:
             "ALTER TABLE detections ADD COLUMN blacklist_reason TEXT",
             "ALTER TABLE detections ADD COLUMN lane TEXT",
             "ALTER TABLE detections ADD COLUMN deleted_at DATETIME",
+            "ALTER TABLE detections ADD COLUMN crop_path TEXT",
         ]
         for sql in migrations:
             try:
@@ -43,7 +45,7 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
-    def log_detection(self, plate_text, vehicle_type, speed_kmh, direction, confidence):
+    def log_detection(self, plate_text, vehicle_type, speed_kmh, direction, confidence, crop_path=None):
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -57,9 +59,9 @@ class DatabaseManager:
 
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute('''
-                INSERT INTO detections (timestamp, plate_text, vehicle_type, speed_kmh, direction, confidence, payment_status, package_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (timestamp, plate_text, vehicle_type, speed_kmh, direction, confidence, p_status, p_type))
+                INSERT INTO detections (timestamp, plate_text, vehicle_type, speed_kmh, direction, confidence, payment_status, package_type, crop_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (timestamp, plate_text, vehicle_type, speed_kmh, direction, confidence, p_status, p_type, crop_path))
             conn.commit()
             conn.close()
         except Exception as e:

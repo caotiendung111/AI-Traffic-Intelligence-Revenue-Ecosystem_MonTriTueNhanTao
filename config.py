@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_REQUESTS: int = 8
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 60
     RATE_LIMIT_BAN_SECONDS: int = 300
-    MAX_REQUEST_BODY_BYTES: int = 2_000_000
+    MAX_REQUEST_BODY_BYTES: int = 200_000_000
     MAX_WS_PER_IP: int = 3
     MAX_WS_TOTAL: int = 50
     TRUST_PROXY_HEADERS: bool = False
