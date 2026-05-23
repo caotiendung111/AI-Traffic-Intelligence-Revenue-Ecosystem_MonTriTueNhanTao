@@ -230,7 +230,7 @@ class ProcessorWorker(threading.Thread):
                                                             "crop_path": c_path or ""
                                                         }).encode('utf-8')
                                                         req = urllib.request.Request(
-                                                            "http://localhost:8001/api/internal/notify",
+                                                            "https://ai-traffic-dashboard-cmto.onrender.com/api/internal/notify",
                                                             data=req_data,
                                                             headers={'Content-Type': 'application/json'}
                                                         )
