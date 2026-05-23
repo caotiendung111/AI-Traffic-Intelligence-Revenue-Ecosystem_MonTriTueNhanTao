@@ -1263,6 +1263,46 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.post("/api/internal/notify")
 async def notify_new_detection(payload: dict):
+    # 1. Save detection to Cloud Database
+    db_sess = SessionLocal()
+    try:
+        plate_str = payload.get("plate")
+        # Check if plate is already logged recently (e.g. within last 5 seconds to avoid double logging)
+        existing = (
+            db_sess.query(Detection)
+            .filter(Detection.plate_text == plate_str, Detection.deleted_at == None)
+            .order_by(desc(Detection.timestamp))
+            .first()
+        )
+        should_log = True
+        if existing:
+            time_diff = datetime.utcnow() - existing.timestamp
+            if time_diff.total_seconds() < 5:
+                should_log = False
+                
+        if should_log:
+            detection = Detection(
+                plate_text=plate_str,
+                vehicle_type=payload.get("type", "CAR"),
+                confidence=payload.get("confidence", 1.0),
+                payment_status=payload.get("status", "UNPAID"),
+                package_type=payload.get("package", "STANDARD"),
+                blacklist_reason=payload.get("blacklist_reason"),
+                lane=payload.get("lane"),
+                speed_kmh=payload.get("speed_kmh", 0.0),
+                crop_path=payload.get("crop_path", ""),
+                timestamp=datetime.strptime(payload.get("timestamp"), "%Y-%m-%d %H:%M:%S") if payload.get("timestamp") else datetime.utcnow()
+            )
+            db_sess.add(detection)
+            db_sess.commit()
+            print(f"[CLOUD SAVE] Saved external detection: {plate_str}")
+    except Exception as e:
+        print(f"[CLOUD SAVE ERROR] Failed to save detection: {e}")
+        db_sess.rollback()
+    finally:
+        db_sess.close()
+
+    # 2. Broadcast to all active websockets
     await manager.broadcast({
         "event": "new_detection",
         "data": payload
